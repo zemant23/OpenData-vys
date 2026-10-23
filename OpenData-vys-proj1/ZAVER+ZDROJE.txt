@@ -1,0 +1,7 @@
+Když se podíváme na celkový poměr dat, tak vidíme pokles a vyšší kulturou, ale je tak malý, že nestojí moc za zmínku a můžeme říci, že kultura tolik neovlivňuje naději našeho dožití.
+
+
+Zdroje dat:
+Obyvatelé - https://data.csu.gov.cz/datastat/data/VYBER/OBY02AT01
+Kulturní památky - https://pamatkovykatalog.cz/openData
+Naděje dožití - https://csu.gov.cz/produkty/nadeje-doziti-v-okresech-a-spravnich-obvodech-orp

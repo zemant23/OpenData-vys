@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kultura a délka života v okresech ČR – poměry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="data.js" onerror="window.DATA=null"></script>
+</head>
+<body>
+<header class="top" id="nav"></header>
+<main>
+  <h1>Kolikrát víc, o kolik let víc</h1>
+  <p class="lead">Tady stejná data převádíme na poměry a procenta. Každý graf má pod sebou větu, která říká, co z něj vyčíst.</p>
+
+  <section class="panel">
+    <h2>1. Okresy rozdělené do čtyř skupin podle množství kultury</h2>
+    <p class="muted">Seřadili jsme okresy od nejméně po nejvíc kultury a rozdělili je na čtyři stejně velké skupiny. Sloupce ukazují průměrnou naděje dožití v každé skupině.</p>
+    <div class="chart"><canvas id="g-kvartily" aria-label="Průměrné dožití podle skupin kultury"></canvas></div>
+    <div class="legend"><span><i style="background:var(--muzi)"></i>muži</span><span><i style="background:var(--zeny)"></i>ženy</span></div>
+    <div class="note" id="t-kvartily"></div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Okresy s nejdelším a nejkratším životem: kolik mají kultury</h2>
+    <p class="muted">Vzali jsme 10 okresů s nejdelším a 10 okresů s nejkratším životem (průměr mužů a žen) a porovnali jejich kulturu.</p>
+    <div class="grid2">
+      <div class="chart short"><canvas id="g-top" aria-label="Kultura v okresech s nejdelším a nejkratším životem"></canvas></div>
+      <div><div class="num" id="top-pomer">–</div><p id="t-top"></p></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>3. Čtyři typy okresů</h2>
+    <p class="muted">Rozdělili jsme okresy podle toho, zda mají kulturu a délku života nad, nebo pod mediánem (prostřední hodnotou). Číslo ukazuje, kolik okresů do které skupiny patří.</p>
+    <div class="grid2">
+      <div class="quad" id="quad"></div>
+      <div><p id="t-quad"></p></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>4. O kolik déle žijí ženy než muži</h2>
+    <p class="muted">Poměr = dožití žen děleno dožitím mužů. Hodnota 1,07 znamená, že ženy žijí v průměru o 7 % déle. Ukazujeme 10 okresů s největším a 10 okresů s nejmenším rozdílem.</p>
+    <div class="chart tall"><canvas id="g-pohlavi" aria-label="Poměr dožití žen a mužů"></canvas></div>
+    <div class="note" id="t-pohlavi"></div>
+  </section>
+
+  <section class="panel">
+    <h2>5. Z čeho se kultura skládá</h2>
+    <p class="muted">Podíl jednotlivých typů kulturních míst na všech místech ve všech okresech dohromady.</p>
+    <div class="grid2">
+      <div class="chart short"><canvas id="g-typy" aria-label="Podíl typů kulturních míst"></canvas></div>
+      <div id="t-typy"></div>
+    </div>
+  </section>
+</main>
+<footer>Datový podklad: Český statistický úřad (naděje dožití a počet obyvatel okresů); Národní památkový ústav, www.pamatkovykatalog.cz, datum aktualizace 30. 9. 2026, licence CC BY 4.0. Zpracováno skriptem prepare_data.py.</footer>
+
+<script src="common.js"></script>
+<script>
+navigace("pomery");
+if (!D) { chybaDat(); } else {
+  chartDefaults();
+  const okresy = D.okresy;
+  const barvy = ["#3F7F6B", "#C98A0B", "#2F5FA7", "#B03E6A", "#7A5AA6", "#B5651D", "#4A8FA8", "#8A8F2F"];
+  const doz = o => dozitiHodnota(o, "prumer");
+  const jedn = D.meta.maPrepocet ? "na 10 000 obyvatel" : "míst celkem";
+
+  /* 1) kvartily */
+  (function () {
+    const sk = kvartily(okresy);
+    const popisky = ["Nejméně kultury", "Spíš méně", "Spíš více", "Nejvíc kultury"].map((t, i) => {
+      const h = sk[i].map(kulturaHodnota);
+      return `${t} (${fmt(Math.min(...h), 1)}–${fmt(Math.max(...h), 1)})`;
+    });
+    const m = sk.map(s => prumer(s.map(o => o.muzi))), z = sk.map(s => prumer(s.map(o => o.zeny)));
+    const vsechna = [...m, ...z];
+    new Chart(document.getElementById("g-kvartily"), {
+      type: "bar",
+      data: { labels: popisky, datasets: [
+        { label: "Muži", data: m, backgroundColor: css("--muzi") },
+        { label: "Ženy", data: z, backgroundColor: css("--zeny") }] },
+      options: { maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.raw, 2)} let` } } },
+        scales: { y: { min: Math.floor(Math.min(...vsechna) - 1), title: { display: true, text: "naděje dožití (roky)" } },
+                  x: { title: { display: true, text: `skupina okresů (v závorce: kultura ${jedn})` } } } }
+    });
+    const dm = m[3] - m[0], dz = z[3] - z[0];
+    const veta = d => `o <b>${fmt(Math.abs(d), 2)}</b> roku ${d >= 0 ? "déle" : "kratší dobu"}`;
+    document.getElementById("t-kvartily").innerHTML =
+      `Ve čtvrtině okresů s nejvíc kultury žijí muži ${veta(dm)} a ženy ${veta(dz)} než ve čtvrtině s nejmenší kulturou. ` +
+      `To je ${fmt(Math.abs(dm) / m[0] * 100, 1)} % u mužů a ${fmt(Math.abs(dz) / z[0] * 100, 1)} % u žen. ` +
+      `Rozdíl je malý, protože délku života ovlivňuje hlavně zdravotní péče, příjmy a životní styl.`;
+  })();
+
+  /* 2) top 10 / bottom 10 */
+  (function () {
+    const s = [...okresy].sort((a, b) => doz(b) - doz(a));
+    const n = Math.min(10, Math.floor(s.length / 2));
+    const hore = s.slice(0, n), dole = s.slice(-n);
+    const kh = prumer(hore.map(kulturaHodnota)), kd = prumer(dole.map(kulturaHodnota));
+    new Chart(document.getElementById("g-top"), {
+      type: "bar",
+      data: { labels: [`${n} okresů s nejdelším životem`, `${n} okresů s nejkratším životem`],
+        datasets: [{ data: [kh, kd], backgroundColor: [css("--prumer"), css("--kultura")] }] },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => `průměr: ${fmt(c.raw, 2)} (${jedn})` } } },
+        scales: { y: { beginAtZero: true, title: { display: true, text: `průměrná kultura (${jedn})` } } } }
+    });
+    const p = kh / kd;
+    document.getElementById("top-pomer").textContent = isFinite(p) ? fmt(p, 2) + "×" : "–";
+    document.getElementById("t-top").innerHTML = isFinite(p)
+      ? `Okresy s nejdelším životem mají v průměru <b>${fmt(p, 2)}krát</b> ${p >= 1 ? "víc" : "méně"} kultury než okresy s nejkratším životem ` +
+        `(${fmt(kh, 1)} proti ${fmt(kd, 1)}, ${jedn}).`
+      : "Poměr nejde spočítat, protože druhá skupina má nulovou kulturu.";
+  })();
+
+  /* 3) čtyři typy okresů */
+  (function () {
+    const med = a => { const s = [...a].sort((x, y) => x - y), m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+    const mk = med(okresy.map(kulturaHodnota)), md = med(okresy.map(doz));
+    const c = { kd: 0, kn: 0, nd: 0, nn: 0 };
+    okresy.forEach(o => {
+      const k = kulturaHodnota(o) > mk, d = doz(o) > md;
+      c[(k ? "k" : "n") + (d ? "d" : "n")]++;
+    });
+    const n = okresy.length, pct = v => fmt(v / n * 100, 0) + " %";
+    document.getElementById("quad").innerHTML =
+      `<div>Hodně kultury a dlouhý život<b>${c.kd}</b>${pct(c.kd)} okresů</div>` +
+      `<div>Hodně kultury a kratší život<b>${c.kn}</b>${pct(c.kn)} okresů</div>` +
+      `<div>Málo kultury a dlouhý život<b>${c.nd}</b>${pct(c.nd)} okresů</div>` +
+      `<div>Málo kultury a kratší život<b>${c.nn}</b>${pct(c.nn)} okresů</div>`;
+    const hodneK = c.kd + c.kn, maloK = c.nd + c.nn;
+    document.getElementById("t-quad").innerHTML =
+      `Mezi okresy s kulturou nad mediánem (${fmt(mk, 1)}) má dlouhý život <b>${fmt(c.kd / hodneK * 100, 0)} %</b>. ` +
+      `Mezi okresy s kulturou pod mediánem je to <b>${fmt(c.nd / maloK * 100, 0)} %</b>. ` +
+      `Kdyby spolu kultura a délka života nesouvisely, vyšla by v obou skupinách zhruba polovina.`;
+  })();
+
+  /* 4) poměr žen a mužů */
+  (function () {
+    const s = okresy.map(o => ({ okres: o.okres, p: o.zeny / o.muzi })).sort((a, b) => b.p - a.p);
+    const n = Math.min(10, Math.floor(s.length / 2));
+    const v = [...s.slice(0, n), ...s.slice(-n)];
+    new Chart(document.getElementById("g-pohlavi"), {
+      type: "bar",
+      data: { labels: v.map(x => x.okres), datasets: [{ data: v.map(x => x.p),
+        backgroundColor: v.map((_, i) => i < n ? css("--zeny") : css("--muzi")) }] },
+      options: { indexAxis: "y", maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `poměr žen a mužů: ${fmt(c.raw, 3)}` } } },
+        scales: { x: { min: Math.floor(Math.min(...v.map(x => x.p)) * 100 - 1) / 100, title: { display: true, text: "dožití žen ÷ dožití mužů" } } } }
+    });
+    const prum = prumer(okresy.map(o => o.zeny / o.muzi));
+    document.getElementById("t-pohlavi").innerHTML =
+      `V průměru žijí ženy v okresech ČR o <b>${fmt((prum - 1) * 100, 1)} %</b> déle než muži. ` +
+      `Největší rozdíl je v okrese ${s[0].okres} (${fmt((s[0].p - 1) * 100, 1)} %), nejmenší v okrese ${s[s.length - 1].okres} (${fmt((s[s.length - 1].p - 1) * 100, 1)} %).`;
+  })();
+
+  /* 5) typy kultury */
+  (function () {
+    const typy = D.meta.typy;
+    const sum = typy.map(t => okresy.reduce((a, o) => a + (o.typy[t] || 0), 0));
+    const celkem = sum.reduce((a, b) => a + b, 0);
+    new Chart(document.getElementById("g-typy"), {
+      type: "doughnut",
+      data: { labels: typy, datasets: [{ data: sum, backgroundColor: typy.map((_, i) => barvy[i % barvy.length]), borderWidth: 2, borderColor: css("--panel") }] },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { position: "bottom" },
+        tooltip: { callbacks: { label: c => `${c.label}: ${c.raw} (${fmt(c.raw / celkem * 100, 1)} %)` } } } }
+    });
+    document.getElementById("t-typy").innerHTML =
+      `<p>Dohromady je v datech <b>${celkem}</b> kulturních míst.</p><ul>` +
+      typy.map((t, i) => `<li><b>${t}</b>: ${sum[i]} (${fmt(sum[i] / celkem * 100, 1)} %)</li>`).join("") + "</ul>";
+  })();
+}
+</script>
+</body>
+</html>

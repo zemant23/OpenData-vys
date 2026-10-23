@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kultura a délka života v okresech ČR – přehled</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="data.js" onerror="window.DATA=null"></script>
+</head>
+<body>
+<header class="top" id="nav"></header>
+<main>
+  <h1>Žije se déle tam, kde je víc kultury?</h1>
+  <p class="lead" id="vysledek">Načítám…</p>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section class="panel">
+    <div class="controls">
+      <label>Délka života
+        <select id="pohlavi">
+          <option value="prumer">Muži a ženy (průměr)</option>
+          <option value="muzi">Muži</option>
+          <option value="zeny">Ženy</option>
+        </select>
+      </label>
+      <label>Najít okres
+        <input type="search" id="hledej" list="okresy-seznam" placeholder="např. Trutnov">
+        <datalist id="okresy-seznam"></datalist>
+      </label>
+    </div>
+    <div class="grid2">
+      <div>
+        <h2>Každý bod je jeden okres</h2>
+        <p class="muted" id="osy"></p>
+        <div class="chart"><canvas id="scatter" aria-label="Bodový graf kultura a délka života"></canvas></div>
+        <div class="legend"><span><i style="background:var(--prumer)"></i>okres</span>
+          <span><i style="background:var(--kultura)"></i>vybraný okres</span>
+          <span>přerušovaná čára = trend</span></div>
+      </div>
+      <div>
+        <h2>Jak to číst</h2>
+        <p>Čím víc je bod vpravo, tím víc kultury okres má. Čím výš, tím déle tam lidé v průměru žijí.</p>
+        <p class="muted">Korelace (r)</p>
+        <div class="num" id="r">–</div>
+        <p id="rpopis"></p>
+        <div class="note">Souvislost neznamená příčinu. Větší města mají víc kultury a často i lepší zdravotní péči a vyšší příjmy. Kultura sama život neprodlužuje.</div>
+        <p class="muted" id="trend"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Všechny okresy</h2>
+    <p class="muted">Klikněte na záhlaví sloupce a seřadíte tabulku. Klik na řádek okres zvýrazní v grafu.</p>
+    <div class="tablewrap"><table>
+      <thead><tr id="hlavicka"></tr></thead>
+      <tbody id="telo"></tbody>
+    </table></div>
+  </section>
+</main>
+<footer>Datový podklad: Český statistický úřad (naděje dožití a počet obyvatel okresů); Národní památkový ústav, www.pamatkovykatalog.cz, datum aktualizace 30. 9. 2026, licence CC BY 4.0. Zpracováno skriptem prepare_data.py.</footer>
+
+<script src="common.js"></script>
+<script>
+if (!D) { navigace("index"); chybaDat(); } else {
+  navigace("index");
+  chartDefaults();
+  const okresy = D.okresy;
+  const sel = { okres: null };
+  let razeni = { klic: "okres", dolu: false };
+  let graf;
+
+  document.getElementById("okresy-seznam").innerHTML = okresy.map(o => `<option value="${o.okres}">`).join("");
+
+  function dataGrafu() {
+    const p = document.getElementById("pohlavi").value;
+    return okresy.map(o => ({ x: kulturaHodnota(o), y: dozitiHodnota(o, p), okres: o.okres }));
+  }
+
+  function vykresli() {
+    const p = document.getElementById("pohlavi").value;
+    const body = dataGrafu();
+    const xs = body.map(b => b.x), ys = body.map(b => b.y);
+    const r = pearson(xs, ys), reg = regrese(xs, ys);
+    const xmin = Math.min(...xs), xmax = Math.max(...xs);
+    const pohlaviText = { prumer: "muži a ženy (průměr)", muzi: "muži", zeny: "ženy" }[p];
+
+    document.getElementById("r").textContent = fmt(r, 2);
+    document.getElementById("rpopis").innerHTML = `Souvislost je <b>${popisR(r)}</b>. Hodnota r je mezi −1 a +1. Blízko nuly znamená, že spolu data skoro nesouvisí.`;
+    document.getElementById("osy").textContent = `Vodorovně: ${kulturaJednotka()}. Svisle: naděje dožití při narození (roky), ${pohlaviText}.`;
+    document.getElementById("trend").textContent = `Podle trendu je o jedno kulturní místo ${D.meta.maPrepocet ? "na 10 000 obyvatel " : ""}navíc spojeno s rozdílem ${fmt(reg.b, 2)} roku života.`;
+
+    const vyber = sel.okres;
+    const dataset = [
+      { type: "scatter", label: "okresy", data: body,
+        backgroundColor: body.map(b => b.okres === vyber ? css("--kultura") : css("--prumer") + "CC"),
+        pointRadius: body.map(b => b.okres === vyber ? 9 : 5),
+        pointHoverRadius: 8 },
+      { type: "line", label: "trend", data: [{ x: xmin, y: reg.a + reg.b * xmin }, { x: xmax, y: reg.a + reg.b * xmax }],
+        borderColor: css("--muted"), borderDash: [6, 5], borderWidth: 2, pointRadius: 0 }
+    ];
+    if (graf) graf.destroy();
+    graf = new Chart(document.getElementById("scatter"), {
+      data: { datasets: dataset },
+      options: {
+        maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false },
+          tooltip: { filter: i => i.datasetIndex === 0,
+            callbacks: { label: c => `${c.raw.okres}: kultura ${fmt(c.raw.x, 1)}, dožití ${fmt(c.raw.y, 1)} let` } } },
+        scales: {
+          x: { title: { display: true, text: kulturaJednotka() }, beginAtZero: true },
+          y: { title: { display: true, text: "naděje dožití (roky)" } }
+        },
+        onClick: (_, el) => { if (el.length && el[0].datasetIndex === 0) vyberOkres(body[el[0].index].okres); }
+      }
+    });
+  }
+
+  function kpis() {
+    const mm = prumer(okresy.map(o => o.muzi)), mz = prumer(okresy.map(o => o.zeny));
+    const nej = [...okresy].sort((a, b) => dozitiHodnota(b, "prumer") - dozitiHodnota(a, "prumer"))[0];
+    const nejK = [...okresy].sort((a, b) => kulturaHodnota(b) - kulturaHodnota(a))[0];
+    document.getElementById("kpis").innerHTML =
+      `<div class="kpi m"><span>Průměrné dožití mužů</span><b>${fmt(mm)} let</b></div>` +
+      `<div class="kpi z"><span>Průměrné dožití žen</span><b>${fmt(mz)} let</b></div>` +
+      `<div class="kpi p"><span>Nejdelší život (průměr)</span><b>${nej.okres}</b></div>` +
+      `<div class="kpi k"><span>Nejvíc kultury</span><b>${nejK.okres}</b></div>`;
+    document.getElementById("vysledek").innerHTML =
+      `Spojili jsme dvě nesouvisející datové sady z data.gov.cz: <b>naděje dožití</b> (období ${D.meta.obdobi}) a <b>kulturní místa</b> (${D.meta.typy.join(", ")}) v <b>${D.meta.pocetOkresu}</b> okresech.`;
+  }
+
+  const sloupce = [
+    ["okres", "Okres"], ["muzi", "Muži (roky)"], ["zeny", "Ženy (roky)"],
+    ["kultura", "Kulturních míst"], ["na10k", "Na 10 tis. obyv."]
+  ].filter(s => s[0] !== "na10k" || D.meta.maPrepocet);
+
+  function tabulka() {
+    document.getElementById("hlavicka").innerHTML = sloupce.map(([k, n]) =>
+      `<th scope="col"><button data-k="${k}">${n}${razeni.klic === k ? (razeni.dolu ? " ▼" : " ▲") : ""}</button></th>`).join("");
+    const radky = [...okresy].sort((a, b) => {
+      const x = a[razeni.klic], y = b[razeni.klic];
+      const c = typeof x === "string" ? x.localeCompare(y, "cs") : (x ?? -1) - (y ?? -1);
+      return razeni.dolu ? -c : c;
+    });
+    document.getElementById("telo").innerHTML = radky.map(o =>
+      `<tr data-o="${o.okres}" class="${o.okres === sel.okres ? "sel" : ""}"><td>${o.okres}</td><td>${fmt(o.muzi)}</td><td>${fmt(o.zeny)}</td><td>${o.kultura}</td>` +
+      (D.meta.maPrepocet ? `<td>${fmt(o.na10k)}</td>` : "") + `</tr>`).join("");
+  }
+
+  function vyberOkres(nazev) {
+    sel.okres = okresy.some(o => o.okres === nazev) ? nazev : null;
+    vykresli(); tabulka();
+  }
+
+  document.getElementById("pohlavi").addEventListener("change", vykresli);
+  document.getElementById("hledej").addEventListener("input", e => vyberOkres(e.target.value.trim()));
+  document.getElementById("hlavicka").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    razeni = { klic: b.dataset.k, dolu: razeni.klic === b.dataset.k ? !razeni.dolu : b.dataset.k !== "okres" };
+    tabulka();
+  });
+  document.getElementById("telo").addEventListener("click", e => {
+    const tr = e.target.closest("tr"); if (tr) vyberOkres(tr.dataset.o);
+  });
+
+  kpis(); vykresli(); tabulka();
+}
+</script>
+</body>
+</html>
